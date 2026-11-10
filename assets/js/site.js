@@ -12,20 +12,20 @@
     en: {
       open: function (t) { return "Open now, until " + t; },
       soon: function (t) { return "Opens today at " + t; },
-      closed: function (d, t) { return "Closed now. Next open " + d + " at " + t; },
+      closed: function (d, t, tomorrow) { return "Closed now. Next open " + (tomorrow ? "tomorrow" : d) + " at " + t; },
       weather: "Closed today for weather",
       days: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
-      today: "today", tomorrow: "tomorrow", by: "By appointment only",
+      am: "a.m.", pm: "p.m.", by: "By appointment only",
       of: " of ", months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
       dateFmt: function (d) { return this.months[d.m] + " " + d.d + ", " + d.y; }
     },
     es: {
       open: function (t) { return "Abierto ahora, hasta las " + t; },
       soon: function (t) { return "Abre hoy a las " + t; },
-      closed: function (d, t) { return "Cerrado ahora. Abre el " + d + " a las " + t; },
+      closed: function (d, t, tomorrow) { return "Cerrado ahora. Abre " + (tomorrow ? "mañana" : "el " + d) + " a las " + t; },
       weather: "Cerrado hoy por el clima",
       days: ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"],
-      today: "hoy", tomorrow: "mañana", by: "Solo con cita",
+      am: "a. m.", pm: "p. m.", by: "Solo con cita",
       months: ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"],
       dateFmt: function (d) { return d.d + " de " + this.months[d.m] + " de " + d.y; }
     }
@@ -47,11 +47,14 @@
     return { dow: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(get("weekday")), mins: +get("hour") * 60 + +get("minute") };
   }
   function toMins(s) { var p = s.split(":"); return +p[0] * 60 + +p[1]; }
+  // Client style: no zeros (10 a.m., 2 p.m., 12:30 p.m.) and always a.m./p.m.
   function fmtTime(s) {
     var p = s.split(":"), h = +p[0], mm = p[1];
-    var suffix = h >= 12 ? "PM" : "AM"; h = h % 12 || 12;
+    var suffix = h >= 12 ? L().pm : L().am; h = h % 12 || 12;
     return h + (mm === "00" ? "" : ":" + mm) + " " + suffix;
   }
+  // "p.m." already ends in a period, so only add one when it is missing.
+  function sentence(s) { return /[.!?]$/.test(s) ? s : s + "."; }
 
   /* ---------- open / closed status ---------- */
   function weatherOn() { return S.weather.active || params.get("demo") === "weather"; }
@@ -66,9 +69,9 @@
     } else {
       var today = S.hours.filter(function (h) { return h.dow === now.dow; })[0];
       if (today && now.mins >= toMins(today.open) && now.mins < toMins(today.close)) {
-        state = "open"; msg = L().open(fmtTime(today.close)) + ". " + L().by + ".";
+        state = "open"; msg = sentence(L().open(fmtTime(today.close))) + " " + sentence(L().by);
       } else if (today && now.mins < toMins(today.open)) {
-        state = "soon"; msg = L().soon(fmtTime(today.open)) + ". " + L().by + ".";
+        state = "soon"; msg = sentence(L().soon(fmtTime(today.open))) + " " + sentence(L().by);
       } else {
         state = "closed";
         var next = null, add;
@@ -77,8 +80,7 @@
           next = S.hours.filter(function (h) { return h.dow === d; })[0];
           if (next) next = { h: next, add: add };
         }
-        var dayName = next.add === 1 ? L().tomorrow : L().days[next.h.dow];
-        msg = L().closed(dayName, fmtTime(next.h.open)) + ".";
+        msg = sentence(L().closed(L().days[next.h.dow], fmtTime(next.h.open), next.add === 1));
       }
     }
     el.setAttribute("data-state", state);
@@ -106,7 +108,7 @@
     q("[data-phone]", function (n) { n.textContent = S.phone; });
   }
 
-  /* ---------- news + voices ---------- */
+  /* ---------- news ---------- */
   function renderNews() {
     var box = document.getElementById("news-slider");
     if (!box) return;
@@ -133,20 +135,7 @@
     btns[1].disabled = box.scrollLeft + box.clientWidth >= box.scrollWidth - 4;
   }
 
-  var voiceIdx = 0;
-  function renderVoice() {
-    var t = document.getElementById("voice-text");
-    if (!t) return;
-    var v = S.voices[voiceIdx];
-    t.textContent = "“" + pick(v.text) + "”";
-    var c = document.getElementById("voice-cite");
-    c.textContent = v.name;
-    var tag = document.createElement("span"); tag.textContent = pick(v.tag); c.appendChild(tag);
-    document.getElementById("voice-count").textContent = (voiceIdx + 1) + " / " + S.voices.length;
-  }
-
-
-  /* ---------- editable blocks: weather policy, volunteer needs, impact ---------- */
+  /* ---------- editable blocks: weather policy, impact ---------- */
   function renderPolicy() {
     var box = document.getElementById("weather-policy");
     if (!box) return;
@@ -157,17 +146,6 @@
       if (block.heading) { var h = document.createElement("h3"); h.textContent = pick(block.heading); wrap.appendChild(h); }
       block.paragraphs.forEach(function (para) { var p = document.createElement("p"); p.textContent = pick(para); wrap.appendChild(p); });
       box.appendChild(wrap);
-    });
-  }
-  function renderNeeds() {
-    var ul = document.getElementById("volunteer-needs");
-    if (!ul) return;
-    ul.innerHTML = "";
-    S.volunteerNeeds.forEach(function (n) {
-      var li = document.createElement("li");
-      li.innerHTML = '<svg aria-hidden="true"><use href="#i-check"/></svg><span></span>';
-      li.querySelector("span").textContent = pick(n);
-      ul.appendChild(li);
     });
   }
   function renderImpact() {
@@ -197,7 +175,7 @@
     [].forEach.call(document.querySelectorAll("[data-lang]"), function (b) {
       b.setAttribute("aria-pressed", String(b.getAttribute("data-lang") === lang));
     });
-    renderStatus(); renderWeather(); renderNews(); renderVoice(); renderPolicy(); renderNeeds(); renderImpact();
+    renderStatus(); renderWeather(); renderNews(); renderPolicy(); renderImpact();
   }
 
   /* ---------- events ---------- */
@@ -212,9 +190,6 @@
       var box = document.getElementById("news-slider");
       var step = box.firstElementChild ? box.firstElementChild.getBoundingClientRect().width + 20 : 300;
       box.scrollBy({ left: step * +b.getAttribute("data-slide"), behavior: "smooth" });
-    } else if (b.hasAttribute("data-voice")) {
-      voiceIdx = (voiceIdx + +b.getAttribute("data-voice") + S.voices.length) % S.voices.length;
-      renderVoice();
     } else if (b.classList.contains("menu-toggle")) {
       var open = document.getElementById("nav").classList.toggle("open");
       b.setAttribute("aria-expanded", String(open));
@@ -223,6 +198,26 @@
   var slider = document.getElementById("news-slider");
   if (slider) slider.addEventListener("scroll", updateSliderButtons, { passive: true });
   window.addEventListener("resize", updateSliderButtons);
+
+  /* ---------- page transitions, fallback only ----------
+     Where cross-document view transitions exist, CSS does everything (see styles.css). Elsewhere, fade the
+     content out when an internal link is followed, then navigate. Skips new tabs, downloads, modified clicks,
+     in-page anchors, mailto/tel and reduced-motion users. */
+  var root = document.documentElement;
+  if (root.classList.contains("vt-fallback") && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    window.addEventListener("pageshow", function () { root.classList.remove("leaving"); }); // back/forward cache
+    document.addEventListener("click", function (e) {
+      var a = e.target.closest("a[href]");
+      if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if ((a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+      var u = new URL(a.href, location.href);
+      if (u.protocol !== location.protocol || u.origin !== location.origin) return;
+      if (u.pathname === location.pathname && u.search === location.search) return; // same page or in-page anchor
+      e.preventDefault();
+      root.classList.add("leaving");
+      setTimeout(function () { location.href = a.href; }, 230);
+    });
+  }
 
   wireLinks();
   applyLang();
